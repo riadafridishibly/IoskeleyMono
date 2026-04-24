@@ -22,7 +22,7 @@ The name is a mashup: **Iosevka** + **Berkeley** = **Ioskeley**.
 
 ## Installation
 
-Download the latest release from the [Releases page](https://github.com/ahatem/IoskeleyMono/releases).
+Download the latest release from the [Releases page](https://github.com/riadafridishibly/IoskeleyMono/releases).
 
 ### Which file should I download?
 
@@ -32,7 +32,6 @@ Download the latest release from the [Releases page](https://github.com/ahatem/I
 |---|---|
 | Use it in my editor / IDE | A TTF zip |
 | Use it in my terminal with icons | A Nerd Font zip |
-| Use it on the web | `IoskeleyMono-Web.zip` |
 
 **Step 2 — Pick your width:**
 
@@ -177,7 +176,7 @@ For the full list of configuration choices, see [`private-build-plans.toml`](./p
 The font is built automatically via GitHub Actions on every version tag push. To build locally:
 
 ```bash
-git clone https://github.com/ahatem/IoskeleyMono.git
+git clone https://github.com/riadafridishibly/IoskeleyMono.git
 git clone --depth 1 https://github.com/be5invis/Iosevka.git
 
 cp IoskeleyMono/private-build-plans.toml Iosevka/

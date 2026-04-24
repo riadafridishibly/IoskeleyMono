@@ -40,19 +40,26 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Build font
+      - name: Build fonts
         run: |
           cp private-build-plans.toml iosevka-src/
           cd iosevka-src
           npm install
-          npm run build -- contents::IoskeleyMono
+          npm run build -- \
+            contents::IoskeleyMono \
+            contents::IoskeleyMonoSemiCondensed \
+            contents::IoskeleyMonoCondensed
 
       - name: Verify build output
         run: |
-          if [ ! -d "iosevka-src/dist/IoskeleyMono/TTF" ] || [ ! -d "iosevka-src/dist/IoskeleyMono/WOFF2" ]; then
-            echo "Build output directories not found!"
-            exit 1
-          fi
+          for plan in IoskeleyMono IoskeleyMonoSemiCondensed IoskeleyMonoCondensed; do
+            for sub in TTF TTF-Unhinted; do
+              if [ ! -d "iosevka-src/dist/$plan/$sub" ]; then
+                echo "Missing dist/$plan/$sub"
+                exit 1
+              fi
+            done
+          done
 
       - name: Download Nerd Fonts patcher
         run: |
@@ -61,75 +68,39 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Iosevka encodes the width inside the weight name:
-      #   Normal        → IoskeleyMono-{Weight}.ttf
-      #   SemiCondensed → IoskeleyMono-SemiCondensed{Weight}.ttf
-      #   Condensed     → IoskeleyMono-Condensed{Weight}.ttf
+      # Each width is its own build plan with its own family name, so every
+      # dist dir already contains exactly one width — no filename filtering
+      # needed. The Nerd Fonts patcher appends "Nerd Font" to the family
+      # name it reads from each file, which keeps all six final families
+      # (plain + Nerd Font × 3 widths) distinct and installable side by side.
       - name: Patch fonts with Nerd Font glyphs
         run: |
-          mkdir -p patched-fonts/Normal patched-fonts/SemiCondensed patched-fonts/Condensed
-          DIST="iosevka-src/dist/IoskeleyMono/TTF"
           PATCHER="nerd-fonts-patcher/font-patcher"
-
-          for font in "$DIST"/IoskeleyMono-SemiCondensed*.ttf; do
-            fontforge -script "$PATCHER" "$font" --complete --careful --outputdir patched-fonts/SemiCondensed
-          done
-
-          for font in "$DIST"/IoskeleyMono-Condensed*.ttf; do
-            [[ "$font" == *SemiCondensed* ]] && continue
-            fontforge -script "$PATCHER" "$font" --complete --careful --outputdir patched-fonts/Condensed
-          done
-
-          for font in "$DIST"/IoskeleyMono-*.ttf; do
-            [[ "$font" == *Condensed* ]] && continue
-            fontforge -script "$PATCHER" "$font" --complete --careful --outputdir patched-fonts/Normal
+          for pair in "IoskeleyMono:Normal" "IoskeleyMonoSemiCondensed:SemiCondensed" "IoskeleyMonoCondensed:Condensed"; do
+            plan="${pair%%:*}"
+            label="${pair##*:}"
+            mkdir -p "patched-fonts/$label"
+            for font in "iosevka-src/dist/$plan/TTF"/*.ttf; do
+              fontforge -script "$PATCHER" "$font" --complete --careful --outputdir "patched-fonts/$label"
+            done
           done
 
       - name: Package TTF archives per width
         run: |
-          DIST="iosevka-src/dist/IoskeleyMono"
-          mkdir -p pkg-ttf/Normal/Hinted pkg-ttf/Normal/Unhinted
-          mkdir -p pkg-ttf/SemiCondensed/Hinted pkg-ttf/SemiCondensed/Unhinted
-          mkdir -p pkg-ttf/Condensed/Hinted pkg-ttf/Condensed/Unhinted
-
-          # SemiCondensed
-          cp "$DIST"/TTF/IoskeleyMono-SemiCondensed*.ttf pkg-ttf/SemiCondensed/Hinted/
-          cp "$DIST"/TTF-Unhinted/IoskeleyMono-SemiCondensed*.ttf pkg-ttf/SemiCondensed/Unhinted/
-
-          # Condensed
-          for font in "$DIST"/TTF/IoskeleyMono-Condensed*.ttf; do
-            [[ "$font" == *SemiCondensed* ]] && continue
-            cp "$font" pkg-ttf/Condensed/Hinted/
+          for pair in "IoskeleyMono:Normal" "IoskeleyMonoSemiCondensed:SemiCondensed" "IoskeleyMonoCondensed:Condensed"; do
+            plan="${pair%%:*}"
+            label="${pair##*:}"
+            mkdir -p "pkg-ttf/$label/Hinted" "pkg-ttf/$label/Unhinted"
+            cp "iosevka-src/dist/$plan/TTF"/*.ttf "pkg-ttf/$label/Hinted/"
+            cp "iosevka-src/dist/$plan/TTF-Unhinted"/*.ttf "pkg-ttf/$label/Unhinted/"
+            (cd "pkg-ttf/$label" && zip -r "../../IoskeleyMono-$label.zip" .)
           done
-          for font in "$DIST"/TTF-Unhinted/IoskeleyMono-Condensed*.ttf; do
-            [[ "$font" == *SemiCondensed* ]] && continue
-            cp "$font" pkg-ttf/Condensed/Unhinted/
-          done
-
-          # Normal
-          for font in "$DIST"/TTF/IoskeleyMono-*.ttf; do
-            [[ "$font" == *Condensed* ]] && continue
-            cp "$font" pkg-ttf/Normal/Hinted/
-          done
-          for font in "$DIST"/TTF-Unhinted/IoskeleyMono-*.ttf; do
-            [[ "$font" == *Condensed* ]] && continue
-            cp "$font" pkg-ttf/Normal/Unhinted/
-          done
-
-          cd pkg-ttf/Normal && zip -r ../../IoskeleyMono-Normal.zip . && cd ../..
-          cd pkg-ttf/SemiCondensed && zip -r ../../IoskeleyMono-SemiCondensed.zip . && cd ../..
-          cd pkg-ttf/Condensed && zip -r ../../IoskeleyMono-Condensed.zip . && cd ../..
 
       - name: Package Nerd Font archives per width
         run: |
-          cd patched-fonts/Normal && zip -r ../../IoskeleyMono-NerdFont-Normal.zip . && cd ../..
-          cd patched-fonts/SemiCondensed && zip -r ../../IoskeleyMono-NerdFont-SemiCondensed.zip . && cd ../..
-          cd patched-fonts/Condensed && zip -r ../../IoskeleyMono-NerdFont-Condensed.zip . && cd ../..
-
-      - name: Package Web archive
-        run: |
-          cd iosevka-src/dist/IoskeleyMono
-          zip -r ../../../IoskeleyMono-Web.zip WOFF2 WOFF2-Unhinted
+          for label in Normal SemiCondensed Condensed; do
+            (cd "patched-fonts/$label" && zip -r "../../IoskeleyMono-NerdFont-$label.zip" .)
+          done
 
       - name: Set release version
         id: vars
@@ -148,18 +119,23 @@ jobs:
           body: |
             ## Ioskeley Mono ${{ steps.vars.outputs.tag }}
 
+            Each width ships as its own font family, so all three widths — plain and Nerd Font patched — can be installed side by side without family-name collisions.
+
+            **Family names**
+            - Plain — `Ioskeley Mono`, `Ioskeley Mono SemiCondensed`, `Ioskeley Mono Condensed`
+            - Nerd Font — same names with `Nerd Font` appended
+
             **For Desktop Users:**
             - `IoskeleyMono-Normal.zip` — Normal width, all 10 weights. Best starting point for most users.
             - `IoskeleyMono-SemiCondensed.zip` — Slightly narrower. Great for fitting more code on screen.
-            - `IoskeleyMono-Condensed.zip` — Maximum density. Each zip includes a `Hinted/` and `Unhinted/` folder — use Hinted on standard screens, Unhinted on high-DPI/Retina.
+            - `IoskeleyMono-Condensed.zip` — Maximum density.
+
+            Each zip includes a `Hinted/` and `Unhinted/` folder — use Hinted on standard screens, Unhinted on high-DPI/Retina.
 
             **For Terminal Users (Nerd Font):**
             - `IoskeleyMono-NerdFont-Normal.zip` — Normal width, patched with the full Nerd Font glyph set.
             - `IoskeleyMono-NerdFont-SemiCondensed.zip` — Semi Condensed, Nerd Font patched.
             - `IoskeleyMono-NerdFont-Condensed.zip` — Condensed, Nerd Font patched.
-
-            **For Web Developers:**
-            - `IoskeleyMono-Web.zip` — All WOFF2 files, hinted and unhinted, all widths and weights.
 
             ---
             Got a bug or idea? PRs and issues are welcome — this is just a config on top of Iosevka, easy to contribute. 🙌
@@ -170,6 +146,5 @@ jobs:
             IoskeleyMono-NerdFont-Normal.zip
             IoskeleyMono-NerdFont-SemiCondensed.zip
             IoskeleyMono-NerdFont-Condensed.zip
-            IoskeleyMono-Web.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
